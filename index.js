@@ -1,5 +1,6 @@
 require('dotenv').config();
 
+
 const { Client, GatewayIntentBits, SlashCommandBuilder, MessageEmbed, MessageAttachment } = require("discord.js");
 const axios = require('axios');
 
@@ -42,6 +43,7 @@ client.once("ready", async () => {
         option.setName('title')
             .setDescription('String input')
             .setRequired(true)
+
     );
 
     await client.application.commands.create(postmanga);
@@ -107,7 +109,6 @@ client.once("ready", async () => {
 
 
     //Light Novel
-
     const postlightnovel = new SlashCommandBuilder()
     .setName('postlightnovel')
     .setDescription('Posts an light novel to the server on a certain format')
@@ -130,7 +131,7 @@ client.on("messageCreate", async (message) => {
 
     if (message.content.includes('puniyo')) {
         message.reply({
-            content: 'Hi, very sorry I cannot produce any bab... I mean mangas yet... come back later :))',
+            content: 'Hi)',
         });
     }else if (message.content.toLowerCase().includes('faggot')) {
         await message.delete();
