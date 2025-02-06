@@ -4,7 +4,6 @@ require('dotenv').config();
 const { Client, GatewayIntentBits, SlashCommandBuilder, MessageEmbed, MessageAttachment } = require("discord.js");
 const axios = require('axios');
 
-
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -12,6 +11,106 @@ const client = new Client({
         GatewayIntentBits.MessageContent
     ],
 });
+
+//timers
+
+//scheduled code
+const schedule = require('node-schedule');
+const checkCodeDaily = () => {
+    console.log("Checking code at 12: AM EST...");
+};
+
+//every x amount of hour code
+const checkCodeHour = () => {
+    console.log("every hour code has ran");
+};
+
+//every x amount of minute code
+const checkCodeMinute = () => {
+    console.log("every minute code has ran");
+    generateLetterQuestion();
+};
+
+
+//runs daily at x amount of time
+const jobDaily = schedule.scheduleJob({ hour: 0, minute: 0, tz: 'America/New_York' }, checkCodeDaily);
+console.log("Scheduled task to check code at 12:00 AM EST daily.");
+
+//runs every x amount of hours
+const hours = 0;
+const jobHour = schedule.scheduleJob(`0 */${hours} * * *`, checkCodeHour);
+console.log(`Scheduled task to run every ${hours} hours.`);
+
+//runs every x amount of minutes
+const minutes = 20;
+const jobMinute = schedule.scheduleJob(`*/${minutes} * * * *`, checkCodeMinute);
+console.log(`Scheduled task to run every ${minutes} minutes.`);
+
+
+//functions
+//check time
+const timeCheck = () => {
+    const now = new Date();
+    
+    return now.toLocaleTimeString();
+}
+
+//random number
+const randomNumber = (min, max) => {
+    return Math.floor(Math.random() * (max - min)) + min;
+}
+
+//asks a random letter
+const generateLetterQuestion = async () => {
+    const channel = await client.channels.fetch('1336940293362024458');
+
+    const urls = [
+        "https://zen-japanese-api.vercel.app/hiragana", 
+        "https://zen-japanese-api.vercel.app/katakana"
+    ];
+    const chosenURL = urls[randomNumber(0, urls.length)];
+
+    try {
+        const response = await axios.get(chosenURL);
+        const data = response.data;
+
+        if (!data || (data.hiragana && data.hiragana.length === 0) || (data.katakana && data.katakana.length === 0)) {
+            console.log('no data found');
+            return;
+        }
+
+        const randomIndex = randomNumber(0, (data.hiragana || data.katakana).length);
+        
+        if (data.hiragana) {
+            setAnswer(data.hiragana[randomIndex].roumaji);
+            console.log("Answer is:", answerOfLetter);
+            await channel.send(`Guess what's the roumaji of ${data.hiragana[randomIndex].kana}`);
+
+        } else if (data.katakana) {
+            setAnswer(data.katakana[randomIndex].roumaji);
+            console.log("Answer is:", answerOfLetter);
+            await channel.send(`Guess what's the roumaji of ${data.katakana[randomIndex].kana}`);
+        }
+    } catch (error) {
+        console.error(error);
+    }
+
+    
+};
+
+//getter
+const getAnswer = () => {
+    return answerOfLetter;
+}
+
+//setter
+const setAnswer = (answer) => {
+    answerOfLetter = answer;
+}
+
+//global vairiables
+let answerOfLetter = "a";//I have to fix this somehow in the future
+
 
 client.once("ready", async () => {
     console.log("Bot is ready");
@@ -22,8 +121,8 @@ client.once("ready", async () => {
         .addStringOption(option =>
             option.setName('genre')
                 .setDescription('String input')
-                .setRequired(false));
-
+                .setRequired(false)
+    );
     await client.application.commands.create(random);
 
     const search = new SlashCommandBuilder()
@@ -32,8 +131,8 @@ client.once("ready", async () => {
         .addStringOption(option =>
             option.setName('title')
                 .setDescription('String input')
-                .setRequired(true));
-
+                .setRequired(true)
+    );
     await client.application.commands.create(search);
 
     const postmanga = new SlashCommandBuilder()
@@ -45,9 +144,7 @@ client.once("ready", async () => {
             .setRequired(true)
 
     );
-
     await client.application.commands.create(postmanga);
-
 
     const getchapter = new SlashCommandBuilder()
     .setName('getchapter')
@@ -57,22 +154,7 @@ client.once("ready", async () => {
             .setDescription('String input')
             .setRequired(false)
     );
-
     await client.application.commands.create(getchapter);
-
-
-    // const getchapter = new SlashCommandBuilder()
-    // .setName('getchapter')
-    // .setDescription("Posts the a manga's chapter to the server")
-    // .addStringOption(option => 
-    //     option.setName('title')
-    //         .setDescription('String input')
-    //         .setRequired(false)
-    // );
-
-    // await client.application.commands.create(getchapter);
-
-
 
     //Anime
     const randomanime = new SlashCommandBuilder()
@@ -93,7 +175,6 @@ client.once("ready", async () => {
             .setDescription('Release year of the anime')
             .setRequired(false)
     );
-
     await client.application.commands.create(randomanime);
 
     const postanime = new SlashCommandBuilder()
@@ -104,7 +185,6 @@ client.once("ready", async () => {
             .setDescription('Anime Title')
             .setRequired(true)
     );
-
     await client.application.commands.create(postanime);
 
 
@@ -117,11 +197,34 @@ client.once("ready", async () => {
             .setDescription('Light Novel Title')
             .setRequired(true)
     );
-
     await client.application.commands.create(postlightnovel);
 
+    //JP
+    const randomWord = new SlashCommandBuilder()
+    .setName('randomword') 
+    .setDescription('Posts a random Japanese word')
+    .addStringOption(option =>
+        option.setName('system')
+            .setDescription('Choose: H (Hiragana), KK (Katakana), K (Kanji)')
+            .setRequired(true)
+    );
+    await client.application.commands.create(randomWord);
 
+    const answerforletter = new SlashCommandBuilder()
+    .setName('answerforletter')
+    .setDescription('Use this command to asnwer for letter questions only (may change in the future)')
+    .addStringOption(option =>
+        option.setName('answer')
+            .setDescription('Put your answer here')
+            .setRequired(true)
+    )
+    await client.application.commands.create(answerforletter);
     
+    //extra stuffs
+    const timeCheck = new SlashCommandBuilder()
+    .setName('timecheck') 
+    .setDescription('timecheck')
+    await client.application.commands.create(timeCheck);
 
 
 });
@@ -131,7 +234,7 @@ client.on("messageCreate", async (message) => {
 
     if (message.content.includes('puniyo')) {
         message.reply({
-            content: 'Hi)',
+            content: 'Hi',
         });
     }else if (message.content.toLowerCase().includes('faggot')) {
         await message.delete();
@@ -144,10 +247,11 @@ client.on("messageCreate", async (message) => {
     }
 });
 
+//commands
 client.on('interactionCreate', async (interaction) => {
    if (!interaction.isCommand()) return;
 
-   if (interaction.commandName === 'search') {
+   if (interaction.commandName === 'search'){
       const searchTerm = interaction.options.getString('title');
 
          try {
@@ -160,8 +264,6 @@ client.on('interactionCreate', async (interaction) => {
             });
 
             if (res.data && res.data.data.length > 0) {
-
-            //    console.log( res.data.data.id);
                
                const manga = res.data.data[0];
                
@@ -188,11 +290,11 @@ ${mangaLinks.mal ? `- [MyAnimeList](https://myanimelist.net/manga/${mangaLinks.m
          }
 
 
-    }else if (interaction.commandName === 'random') {
+    }else if (interaction.commandName === 'random'){
         const genre = interaction.options.getString('genre');
   
         if (genre) {
-            // console.log("Genre specified:", genre);
+            
          
             while (true) {
                 try {
@@ -241,8 +343,6 @@ ${mangaLinks.mal ? `- [MyAnimeList](https://myanimelist.net/manga/${mangaLinks.m
                 if (res.data && res.data.data) {
                 const manga = res.data.data;
   
-                // console.log(manga.attributes.tags);
-  
                 const mangaTitle = manga.attributes.title.en || 'Unknown Title';
                 const mangaDescription = manga.attributes.description.en || 'No description available.';
                 const mangaGenres = manga.attributes.tags.map(tag => tag.attributes.name.en).join(', ');
@@ -263,7 +363,7 @@ ${mangaLinks.mal ? `- [MyAnimeList](https://myanimelist.net/manga/${mangaLinks.m
                 console.error('Error fetching manga:', error);
             }
         }
-    }else if (interaction.commandName === 'getraw') {
+    }else if (interaction.commandName === 'getraw'){
         const title = interaction.options.getString('title');
 
         try {
@@ -294,7 +394,7 @@ ${mangaLinks.mal ? `- [MyAnimeList](https://myanimelist.net/manga/${mangaLinks.m
             
         }
 
-    }else if (interaction.commandName === 'postmanga') {
+    }else if (interaction.commandName === 'postmanga'){
         const title = interaction.options.getString('title');
 
         try{
@@ -307,20 +407,15 @@ ${mangaLinks.mal ? `- [MyAnimeList](https://myanimelist.net/manga/${mangaLinks.m
             });
 
             if (res.data && res.data.data.length > 0) {
-
-                // console.log( res.data.data.id);
                 console.log(res.data);
-                
                 const manga = res.data.data[0];
-                
                 const mangaTitle = manga.attributes.title.en || 'Unknown Title';
                 const mangaGenres = manga.attributes.tags.map(tag => tag.attributes.name.en).join(', ');
-                
                 const message = `
-**Title:** ${mangaTitle}
-**Genres:** ${mangaGenres}
-- [MangaDex](https://mangadex.org/title/${manga.id})
-                `.trim();
+                    **Title:** ${mangaTitle}
+                    **Genres:** ${mangaGenres}
+                    - [MangaDex](https://mangadex.org/title/${manga.id})
+                                    `.trim();
 
                 await interaction.reply({ content: message });
             } else {
@@ -332,7 +427,7 @@ ${mangaLinks.mal ? `- [MyAnimeList](https://myanimelist.net/manga/${mangaLinks.m
         }
 
 
-    }else if (interaction.commandName === 'randomanime') {
+    }else if (interaction.commandName === 'randomanime'){
         const genre = interaction.options.getString('genre');
         const year = interaction.options.getString('year');
         const type = interaction.options.getString('type');
@@ -412,68 +507,8 @@ ${mangaLinks.mal ? `- [MyAnimeList](https://myanimelist.net/manga/${mangaLinks.m
             });
         }
         
-    }else if (interaction.commandName === 'postanime') {
-        const title = interaction.options.getString('title');
-
-       
-        const url = `https://api.jikan.moe/v4/anime`
-        // let animeNotFound = true;
-        // let reseponse;
-        // while(animeNotFound){
-        //     response = await fetch(url);
-        //     data
-        // }
-
-        response = await fetch(url);
-        
-
-        
-        if (!response.ok) {
-            console.error('Failed to fetch anime:', response.status);
-            await interaction.editReply({
-                content: 'Oops! Something went wrong while fetching anime. Please try again later.',
-                ephemeral: true,
-            });
-            return;
-        }
-
-        const data = await response.json();
-        console.log(data[0].title);
-        
-        await interaction.deferReply(); 
-
-
-        // Extract necessary data
-        const animeTitle = data.title;
-        const animeSynopsis = data.synopsis || "No synopsis available.";
-        const episodes = data.episodes || "N/A";
-        const aired = data.aired?.string || "Unknown";
-        const image = data.images?.jpg.image_url || "";
-        const mal = data.url || "";
-        const animeType = data.type || "Unknown";
-        const animeGenres = data.genres?.map(genre => genre.name) || ["Unknown"];
-
-        // Create embed object
-        const embed = {
-            color: 0x0099ff,
-            title: animeTitle,
-            description: animeSynopsis,
-            fields: [
-                { name: 'Episodes', value: `${episodes}`, inline: true },
-                { name: 'Aired', value: `${aired}`, inline: true },
-                { name: 'Type', value: `${animeType}`, inline: true },
-                { name: 'Genres', value: `${animeGenres.join(', ')}`, inline: true },
-                { name: 'MyAnimeList', value: `[MyAnimeList](${mal})`, inline: true }
-            ],
-            image: {
-                url: image,
-            },
-            footer: {
-                text: 'Enjoy your anime!',
-            },
-        };
-
-        await interaction.editReply({ embeds: [embed] });
+    }else if (interaction.commandName === 'postanime'){
+        await interaction.editReply('Command is Not Available');
 
         
     }else if (interaction.commandName === 'postlightnovel'){
@@ -482,15 +517,59 @@ ${mangaLinks.mal ? `- [MyAnimeList](https://myanimelist.net/manga/${mangaLinks.m
     }else if (interaction.commandName === 'getchapter'){
         await interaction.reply('Command is Not Available');
 
+    }else if (interaction.commandName === 'randomword'){
+        const choice = interaction.options.getString('system');
+
+        let systemURL;
+        if (choice === 'H') {
+            systemURL = 'https://zen-japanese-api.vercel.app/hiragana'
+        } else if (choice === 'KK') {
+            systemURL = 'https://zen-japanese-api.vercel.app/katakana'
+        } else if (choice === 'K') {
+            return interaction.reply({ content: 'coming soon', ephemeral: true });
+        } else {
+            return interaction.reply({ content: 'Invalid choice! Use H, KK, or K.', ephemeral: true });
+        }
+        try {
+            const response = await axios.get(systemURL);
+            const data = response.data;
+
+            if (!data || data.hiragana.length === 0) {
+                return interaction.reply({ content: 'No data found.', ephemeral: true });
+            }
+
+            const randomNumber = Math.floor(Math.random() * data.hiragana.length);
+            console.log(data.hiragana[randomNumber].kana);
+            
+            await interaction.reply(`${data.hiragana[randomNumber].kana}`);
+        } catch (error) {
+            console.error(error);
+            await interaction.reply({ content: '⚠️ Error fetching data from the Japanese API.', ephemeral: true });
+        }
+    }else if (interaction.commandName === 'timecheck'){
+
+        await interaction.reply(`${timeCheck()}`);
+        console.log(getAnswer());
+
+    }else if (interaction.commandName === 'askme'){
+        await interaction.reply(`command it yet to be implemented`);
+    }else if (interaction.commandName === 'answerforletter') {
+        const answer = interaction.options.getString('answer');
+
+        console.log('/answer just ran');
+        console.log(getAnswer());
+        
+    
+        if (answer.toLowerCase() === getAnswer().toLowerCase()) {
+            await interaction.reply(`${interaction.user.username} has answered correctly!!! ${timeCheck()}`);
+        } else {
+            await interaction.reply(`Try again!`);
+        }
     }
+    
 
   
 });
-
-
-
-
-
 
 client.login(process.env.DISCORD_TOKEN).catch((error) => {
     console.error('Failed to log in:', error);
