@@ -13,8 +13,10 @@ const client = new Client({
 });
 
 //global vairiables
-let answerHiragana = 0;//I have to fix this somehow in the future
-let answerKatakana = 0 ;
+let answerHiragana;//I have to fix this somehow in the future
+let answerKatakana;
+let answerKanji;
+
 
 //timers
 //scheduled code
@@ -33,6 +35,7 @@ const checkCodeMinute = () => {
     console.log("every minute code has ran");
     generateLetterHiraganaQuestion();
     generateLetterKatakanaQuestion();
+    generateLetterKanjiQuestion();
 };
 
 
@@ -76,7 +79,7 @@ const generateLetterHiraganaQuestion = async () => {
         }
         const randomIndex = randomNumber(0, data.hiragana.length);
         setAnswerHiragana(data.hiragana[randomIndex].roumaji);
-        console.log("Answer is:", getAnswerHiragana());
+        console.log("Answer for hiragana is:", getAnswerHiragana());
         await channel.send(`Guess what's the roumaji of ${data.hiragana[randomIndex].kana}`);
     } catch (error) {
         console.error(error);
@@ -94,12 +97,36 @@ const generateLetterKatakanaQuestion = async () => {
         }
         const randomIndex = randomNumber(0, data.katakana.length);
         setAnswerKatakana(data.katakana[randomIndex].roumaji);
-        console.log("Answer is:", getAnswerkatakana());
+        console.log("Answer for katakana is:", getAnswerkatakana());
         await channel.send(`Guess what's the roumaji of ${data.katakana[randomIndex].kana}`);
     } catch (error) {
         console.error(error);
     }
 };
+
+const generateLetterKanjiQuestion = async () => {
+    const channel = await client.channels.fetch('1338056201740619857');
+    const kanjiEndpoints = ['jouyou', 'kyouiku', 'wanikani']
+    const kanjiUrl = `https://zen-japanese-api.vercel.app/kanji/${kanjiEndpoints[randomNumber(0, kanjiEndpoints.length)]}`
+    console.log(kanjiUrl);
+    try {
+        const response = await axios.get(kanjiUrl);
+        const data = response.data;
+        console.log(Object.keys(data.kanji)[randomNumber(0, Object.keys(data.kanji).length)]);
+        if (!data || (data.kanji && data.kanji.length === 0)) {
+            console.log('no data found');
+            return;
+        }
+        const randomIndex = randomNumber(0, Object.keys(data.kanji).length);
+        const selectedKanji = Object.keys(data.kanji)[randomIndex];
+        setAnswerKanji({ meanings: data.kanji[selectedKanji].meanings });
+        // console.log(data.kanji[Object.keys(data.kanji)[randomIndex]]);
+        console.log("Answer for kanji is:", getAnswerKanji());
+        await channel.send(`Guess what's the meaning of ${selectedKanji}`);
+    } catch (error) {
+        console.error(error);
+    }
+}
 
 //getter
 const getAnswerHiragana= () => {
@@ -110,12 +137,20 @@ const getAnswerkatakana = () => {
     return answerKatakana;
 }
 
+const getAnswerKanji = () => {
+    return answerKatakana;
+}
+
 //setter
 const setAnswerHiragana = (answer) => {
     answerHiragana = answer;
 }
 
 const setAnswerKatakana = (answer) => {
+    answerKatakana = answer;
+}
+
+const setAnswerKanji = (answer) => {
     answerKatakana = answer;
 }
 
@@ -514,6 +549,12 @@ ${mangaLinks.mal ? `- [MyAnimeList](https://myanimelist.net/manga/${mangaLinks.m
             }
         }else if (channelId === '1338045397972553759') {
             if (answer.toLowerCase() === getAnswerkatakana().toLowerCase()) {
+                await interaction.reply(`${interaction.user.username} has answered correctly!!! ${timeCheck()}`);
+            } else {
+                await interaction.reply(`Try again!`);
+            }
+        }else if (channelId === '1338056201740619857') {
+            if (getAnswerKanji().meanings.some(meaning => answer.toLowerCase() === meaning.toLowerCase())) {
                 await interaction.reply(`${interaction.user.username} has answered correctly!!! ${timeCheck()}`);
             } else {
                 await interaction.reply(`Try again!`);
