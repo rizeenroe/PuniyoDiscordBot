@@ -138,7 +138,7 @@ const getAnswerkatakana = () => {
 }
 
 const getAnswerKanji = () => {
-    return answerKatakana;
+    return answerKanji;
 }
 
 //setter
@@ -151,7 +151,7 @@ const setAnswerKatakana = (answer) => {
 }
 
 const setAnswerKanji = (answer) => {
-    answerKatakana = answer;
+    answerKanji = answer;
 }
 
 
