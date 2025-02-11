@@ -7,16 +7,20 @@ const axios = require('axios');
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent
     ],
 });
 
-//global vairiables
-let answerHiragana;//I have to fix this somehow in the future
-let answerKatakana;
-let answerKanji;
-
+// Firebase configuration
+const admin = require('firebase-admin');
+const serviceAccount = JSON.parse(process.env.FIREBASEKEY);
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+});
+require('firebase/firestore'); 
+const db = admin.firestore();
 
 //timers
 //scheduled code
@@ -31,27 +35,59 @@ const checkCodeHour = () => {
 };
 
 //every x amount of minute code
-const checkCodeMinute = () => {
-    console.log("every minute code has ran");
-    generateLetterHiraganaQuestion();
-    generateLetterKatakanaQuestion();
-    generateLetterKanjiQuestion();
+const checkCodeMinute = async () => {
+    console.log("Every minute code has run");
+    client.guilds.cache.forEach(async (guild) => {
+        const serverId = guild.id;
+        try {
+            const subcollectionRef = db.collection("servers").doc(serverId).collection("users");
+            const snapshot = await subcollectionRef.get();
+            snapshot.forEach(async (doc) => {
+                const userDocRef = subcollectionRef.doc(doc.id);
+                await userDocRef.update({
+                    hiraganaAnswered: false,
+                    katakanaAnswered: false,
+                    kanjiAnswered: false
+                });
+    
+                console.log(`Reset answered for user ${doc.id}`);
+            });
+
+
+            const serversRef = db.collection('servers');
+            const serverDoc = await serversRef.doc(serverId).get();
+            if (serverDoc.exists) {
+                const data = serverDoc.data();
+
+                const askHiraganaChannel = data.askHiraganaChannel;
+                const askKatakanaChannel = data.askKatakanaChannel;
+                const askKanjiChannel = data.askKanjiChannel;
+                
+                generateLetterHiraganaQuestion(askHiraganaChannel, data.serverId);
+                generateLetterKatakanaQuestion(askKatakanaChannel, data.serverId);
+                generateLetterKanjiQuestion(askKanjiChannel, data.serverId);
+            } else {
+                console.log(`No document found for server ID: ${serverId}`);
+            }
+            
+        } catch (error) {
+            console.error("Error fetching data from Firestore:", error);
+        }
+    });
 };
+
 
 
 //runs daily at x amount of time
 const jobDaily = schedule.scheduleJob({ hour: 0, minute: 0, tz: 'America/New_York' }, checkCodeDaily);
-console.log("Scheduled task to check code at 12:00 AM EST daily.");
 
 //runs every x amount of hours
 const hours = 0;
 const jobHour = schedule.scheduleJob(`0 */${hours} * * *`, checkCodeHour);
-console.log(`Scheduled task to run every ${hours} hours.`);
 
 //runs every x amount of minutes
 const minutes = 1;
 const jobMinute = schedule.scheduleJob(`*/${minutes} * * * *`, checkCodeMinute);
-console.log(`Scheduled task to run every ${minutes} minutes.`);
 
 
 //functions
@@ -67,28 +103,35 @@ const randomNumber = (min, max) => {
     return Math.floor(Math.random() * (max - min)) + min;
 }
 
-//asks a random letter
-const generateLetterHiraganaQuestion = async () => {
-    const channel = await client.channels.fetch('1336940293362024458');
+//asks a random letter for hiragana
+const generateLetterHiraganaQuestion = async (channelId, serverId) => {
+    const channel = await client.channels.fetch(channelId);
     try {
+        const serverRef = db.collection('servers').doc(serverId);
         const response = await axios.get('https://zen-japanese-api.vercel.app/hiragana');
         const data = response.data;
-        if (!data || (data.hiragana && data.hiragana.length === 0)) {
-            console.log('no data found');
+        if (!data || data.hiragana.length === 0) {
+            console.log('No data found');
             return;
         }
-        const randomIndex = randomNumber(0, data.hiragana.length);
-        setAnswerHiragana(data.hiragana[randomIndex].roumaji);
-        console.log("Answer for hiragana is:", getAnswerHiragana());
-        await channel.send(`Guess what's the roumaji of ${data.hiragana[randomIndex].kana}`);
+        const randomIndex = Math.floor(Math.random() * data.hiragana.length);
+        const selectedHiragana = data.hiragana[randomIndex]
+        await serverRef.update({
+            hiraganaAnswer: selectedHiragana.roumaji 
+        });
+        console.log(`Hiragana answer: ${selectedHiragana.roumaji}`);
+        
+        await channel.send(`Guess what's the roumaji of ${selectedHiragana.kana}`);
     } catch (error) {
-        console.error(error);
+        console.error('Error in generateLetterHiraganaQuestion:', error);
     }
 };
 
-const generateLetterKatakanaQuestion = async () => {
-    const channel = await client.channels.fetch('1338045397972553759');
+//asks a random letter for katakana
+const generateLetterKatakanaQuestion = async (channelId, serverId) => {
+    const channel = await client.channels.fetch(channelId);
     try {
+        const serverRef = db.collection('servers').doc(serverId);
         const response = await axios.get("https://zen-japanese-api.vercel.app/katakana");
         const data = response.data;
         if (!data || (data.katakana && data.katakana.length === 0)) {
@@ -96,67 +139,166 @@ const generateLetterKatakanaQuestion = async () => {
             return;
         }
         const randomIndex = randomNumber(0, data.katakana.length);
-        setAnswerKatakana(data.katakana[randomIndex].roumaji);
-        console.log("Answer for katakana is:", getAnswerkatakana());
-        await channel.send(`Guess what's the roumaji of ${data.katakana[randomIndex].kana}`);
+        const selectedKatakana = data.katakana[randomIndex];
+        await serverRef.update({
+            katakanaAnswer: selectedKatakana.roumaji 
+        });
+        console.log(`Katakana Answer: ${selectedKatakana.roumaji}`);
+        
+        await channel.send(`Guess what's the roumaji of ${selectedKatakana.kana}`);
     } catch (error) {
         console.error(error);
     }
 };
 
-const generateLetterKanjiQuestion = async () => {
-    const channel = await client.channels.fetch('1338056201740619857');
-    const kanjiEndpoints = ['jouyou', 'kyouiku', 'wanikani']
-    const kanjiUrl = `https://zen-japanese-api.vercel.app/kanji/${kanjiEndpoints[randomNumber(0, kanjiEndpoints.length)]}`
-    console.log(kanjiUrl);
+//asks a random letter for kanji
+const generateLetterKanjiQuestion = async (channelId, serverId) => {
+    const channel = await client.channels.fetch(channelId);
+    const kanjiEndpoints = ['jouyou', 'kyouiku', 'wanikani'];
+    const kanjiUrl = `https://zen-japanese-api.vercel.app/kanji/${kanjiEndpoints[randomNumber(0, kanjiEndpoints.length)]}`;
+    console.log('Kanji API URL:', kanjiUrl);
     try {
+        const serverRef = db.collection('servers').doc(serverId);
         const response = await axios.get(kanjiUrl);
         const data = response.data;
-        console.log(Object.keys(data.kanji)[randomNumber(0, Object.keys(data.kanji).length)]);
         if (!data || (data.kanji && data.kanji.length === 0)) {
-            console.log('no data found');
+            console.log('No data found');
             return;
         }
-        const randomIndex = randomNumber(0, Object.keys(data.kanji).length);
+        const randomIndex = randomNumber(0, Object.keys(data.kanji).length - 1);
         const selectedKanji = Object.keys(data.kanji)[randomIndex];
-        setAnswerKanji({ meanings: data.kanji[selectedKanji].meanings });
-        // console.log(data.kanji[Object.keys(data.kanji)[randomIndex]]);
-        console.log("Answer for kanji is:", getAnswerKanji());
+        await serverRef.update({
+            kanjiAnswer: data.kanji[selectedKanji].meanings
+        });
+        console.log("Answer for kanji is:", data.kanji[selectedKanji].meanings);
         await channel.send(`Guess what's the meaning of ${selectedKanji}`);
     } catch (error) {
-        console.error(error);
+        console.error('Error in generateLetterKanjiQuestion:', error);
+    }
+};
+
+const askAndWaitForChannel = async (interaction, varName) => {
+    try {
+        const filter = (msg) => msg.author.id === interaction.user.id && msg.mentions.channels.size > 0;
+        const collected = await interaction.channel.awaitMessages({
+            filter,
+            max: 1,
+            time: 30000,
+            errors: ['time']
+        });
+
+        const channel = collected.first().mentions.channels.first();
+
+        if (channel) {
+            console.log(`Channel ID for ${varName}: ${channel.id}`);
+            return channel.id;
+        } else {
+            await interaction.channel.send('Please mention a valid channel. Try again.');
+            return null;
+        }
+    } catch (error) {
+        await interaction.channel.send('No response received. Setup timed out.');
+        return null;
+    }
+};
+
+const askYesNo = async (interaction) => {
+    try {
+        const filter = (msg) => msg.author.id === interaction.user.id && ['yes', 'no'].includes(msg.content.toLowerCase());
+        const collected = await interaction.channel.awaitMessages({ filter, max: 1, time: 30000, errors: ['time'] });
+
+        return collected.first().content.toLowerCase() === 'yes';
+    } catch (error) {
+        await interaction.channel.send('No response received. Try Again.');
+        return false;
+    }
+};
+
+const answerHandler = async(userId, userDocRef, interaction, type) => {
+    try {
+        const userDoc = await userDocRef.get();
+        const userData = userDoc.data();
+        let updatedHiraganaCurrentStreak = userData.hiraganaCurrentStreak + 1;
+        let updatedkatakanaCurrentStreak = userData.katakanaCurrentStreak + 1;
+        let updatedkanjiCurrentStreak = userData.kanjiCurrentStreak + 1;
+        let updatedHiraganaLongestStreak = userData.hiraganaLongestStreak + 1;
+        let updatedKatakanaLongestStreak = userData.katakanaLongestStreak + 1;
+        let updatedKanjiLongestStreak = userData.kanjiLongestStreak + 1;
+        let updatedHiraganaPoints = userData.hiraganaPoints + 1;
+        let updatedKatakanaPoints = userData.katakanaPoints + 1;
+        let updatedKanjiPoints = userData.kanjiPoints + 1;
+        let hiraganaAnswered = userData.hiraganaAnswered;
+        let katakanaAnswered = userData.katakanaAnswered;
+        let kanjiAnswered = userData.kanjiAnswered;
+
+        let message = `${interaction.user.username} has answered correctly!!!`
+
+        if (type === "hiragana") {
+            updatedHiraganaCurrentStreak = userData.hiraganaCurrentStreak + 1;
+            if (updatedHiraganaCurrentStreak > updatedHiraganaLongestStreak) {
+                updatedHiraganaLongestStreak = updatedHiraganaCurrentStreak;
+            }
+            updatedHiraganaPoints = userData.hiraganaPoints + 1;
+            hiraganaAnswered = true;
+            message += `You now have ${updatedHiraganaPoints} points and a streak of ${updatedHiraganaCurrentStreak}!!! ${timeCheck()}`
+        }else if (type === "katakana") {
+            updatedkatakanaCurrentStreak = userData.katakanaCurrentStreak + 1;
+            if (updatedKatakanaCurrentStreak > updatedKatakanaLongestStreak) {
+                updatedKatakanaLongestStreak = updatedKatakanaCurrentStreak;
+            }
+            updatedKatakanaPoints = userData.katakanaPoints + 1;
+            katakanaAnswered = true;
+            message += `You now have ${updatedKatakanaPoints} points and a streak of ${updatedKatakanaCurrentStreak}!!! ${timeCheck()}`
+        }else if (type === "kanji"){
+            updatedkanjiCurrentStreak = userData.kanjiCurrentStreak + 1;
+            if (updatedKanjiCurrentStreak > updatedKanjiLongestStreak) {
+                updatedKanjiLongestStreak = updatedKanjiCurrentStreak;
+            }
+            updatedKanjiPoints = userData.kanjiPoints + 1;
+            kanjiAnswered = true;
+            message += `You now have ${updatedKanjiPoints} points and a streak of ${updatedKanjiCurrentStreak}!!! ${timeCheck()}`
+        }else {
+            console.log('unknown type');
+            
+        }
+
+        await userDocRef.update({
+            hiraganaCurrentStreak: updatedHiraganaCurrentStreak,
+            katakanaCurrentStreak: updatedkatakanaCurrentStreak,
+            kanjiCurrentStreak: updatedkanjiCurrentStreak,
+            hiraganaLongestStreak: updatedHiraganaLongestStreak,
+            katakanaLongestStreak: updatedKatakanaLongestStreak,
+            kanjiLongestStreak: updatedKanjiLongestStreak,
+            hiraganaPoints: updatedHiraganaPoints,
+            katakanaPoints: updatedKatakanaPoints,
+            kanjiPoints: updatedKanjiPoints,
+            hiraganaAnswered: hiraganaAnswered,
+            katakanaAnswered: katakanaAnswered,
+            kanjiAnswered: kanjiAnswered
+        }, { merge: true });
+
+        await interaction.reply(message);
+    } catch (error) {
+        console.error('Error updating user data:', error);
+        await interaction.reply('There was an error updating your profile.');
     }
 }
 
-//getter
-const getAnswerHiragana= () => {
-    return answerHiragana;
-}
 
-const getAnswerkatakana = () => {
-    return answerKatakana;
-}
-
-const getAnswerKanji = () => {
-    return answerKanji;
-}
-
-//setter
-const setAnswerHiragana = (answer) => {
-    answerHiragana = answer;
-}
-
-const setAnswerKatakana = (answer) => {
-    answerKatakana = answer;
-}
-
-const setAnswerKanji = (answer) => {
-    answerKanji = answer;
-}
 
 
 client.once("ready", async () => {
     console.log("Bot is ready");
+    console.log(client.guilds.cache.guild);
+    
+
+    client.guilds.cache.forEach(guild => {
+        const serverId = guild.id;
+        console.log(`The bot is in server with ID: ${serverId}`);
+
+        // You can now use the serverId for further operations
+        // For example, fetching server-specific data or sending messages
+    });
 
     const random = new SlashCommandBuilder()
         .setName('random')
@@ -178,9 +320,9 @@ client.once("ready", async () => {
     );
     await client.application.commands.create(search);
 
-    const postmanga = new SlashCommandBuilder()
-    .setName('postmanga')
-    .setDescription('Posts the manga to server')
+    const post = new SlashCommandBuilder()
+    .setName('post')
+    .setDescription('Posts the manga/manwha to server')
     .addStringOption(option => 
         option.setName('title')
             .setDescription('Title of the manga')
@@ -198,7 +340,7 @@ client.once("ready", async () => {
     )
 
 
-    await client.application.commands.create(postmanga);
+    await client.application.commands.create(post);
 
     const getchapter = new SlashCommandBuilder()
     .setName('getchapter')
@@ -273,6 +415,12 @@ client.once("ready", async () => {
             .setRequired(true)
     )
     await client.application.commands.create(answer);
+
+    //Server Config
+    const serverSetUp = new SlashCommandBuilder()
+    .setName('serversetup')
+    .setDescription('Use this command to set up the channels, time, etc')
+    await client.application.commands.create(serverSetUp);
     
     //extra stuffs
     const timeCheck = new SlashCommandBuilder()
@@ -448,11 +596,21 @@ ${mangaLinks.mal ? `- [MyAnimeList](https://myanimelist.net/manga/${mangaLinks.m
             
         }
 
-    }else if (interaction.commandName === 'postmanga'){
+    }else if (interaction.commandName === 'post'){
         const title = interaction.options.getString('title');
-        const rating = interaction.options.getString('rating');
+        let rating = interaction.options.getString('rating');
         const comment = interaction.options.getString('comment');
 
+        if (rating) {
+            rating = parseFloat(rating);
+            if (rating < 1 || rating > 10) {
+                const replyMessage = await interaction.reply({ content: 'Please provide a valid rating between 1 and 10.' });
+                setTimeout(() => {
+                    replyMessage.delete();
+                }, 5000);
+                return;
+            }
+        }
         try{
             const res = await axios({
                 method: 'GET',
@@ -471,7 +629,7 @@ ${mangaLinks.mal ? `- [MyAnimeList](https://myanimelist.net/manga/${mangaLinks.m
                     **Title:** ${mangaTitle}\n**Genres:** ${mangaGenres}\n- [MangaDex](https://mangadex.org/title/${manga.id})`
                 
                 if (rating) {
-                    message += `\n**Rating**: ${rating}`;
+                    message += `\n**Rating**: ${rating}/10`;
                 }
     
                 if (comment) {
@@ -538,33 +696,191 @@ ${mangaLinks.mal ? `- [MyAnimeList](https://myanimelist.net/manga/${mangaLinks.m
         await interaction.reply(`command it yet to be implemented`);
     }else if (interaction.commandName === 'answer') {
         const answer = interaction.options.getString('answer');
-        console.log('/answer just ran');
         const channelId = interaction.channelId;
-        console.log(`Channel ID: ${channelId}`);
-        if (channelId === '1336940293362024458') {
-            if (answer.toLowerCase() === getAnswerHiragana().toLowerCase()) {
-                await interaction.reply(`${interaction.user.username} has answered correctly!!! ${timeCheck()}`);
+        const userId = interaction.user.id;
+        
+        //checking for user in the users collection
+        const subcollectionRef = db.collection("servers").doc(interaction.guildId).collection("users");
+        const userCollectionRef = subcollectionRef.doc(userId);
+        
+        
+        try {
+            // console.log((await userCollectionRef.get()).data());
+            const userDoc = await userCollectionRef.get();
+            const userData = userDoc.exists ? userDoc.data() : {}; ;
+            const serversRef = db.collection('servers');
+            const serverDoc = await serversRef.doc(interaction.guildId).get();
+            
+            if (serverDoc.exists) {
+                const data = serverDoc.data();
+                if ((channelId === data.askHiraganaChannel && userData.hiraganaAnswered) || 
+                    (channelId === data.askKatakanaChannel && userData.katakanaAnswered) || 
+                    (channelId === data.askKanjiChannel && userData.kanjiAnswered)) {
+                    await interaction.reply('You have already answered this question!');
+                    return;
+                }
+    
+                const askHiraganaChannel = data.askHiraganaChannel;
+                const askKatakanaChannel = data.askKatakanaChannel;
+                const askKanjiChannel = data.askKanjiChannel;
+    
+                if (channelId === askHiraganaChannel) {
+                    if (answer.toLowerCase() === data.hiraganaAnswer) {
+                        await answerHandler(userId, userCollectionRef, interaction, 'hiragana');
+                    } else {
+                        await userCollectionRef.update({
+                            hiraganaCurrentStreak: 0
+                        }, { merge: true });
+                        await interaction.reply('Try again!');
+                    }
+                } else if (channelId === askKatakanaChannel) {
+                    if (answer.toLowerCase() === data.katakanaAnswer) {
+                        await answerHandler(userId, userCollectionRef, interaction, 'katakana');
+                    } else {
+                        await userCollectionRef.update({
+                            katakanaCurrentStreak: 0
+                        }, { merge: true });
+                        await interaction.reply('Try again!');
+                    }
+                } else if (channelId === askKanjiChannel) {
+                    if (data.kanjiAnswer.some(meaning => answer.toLowerCase() === meaning.toLowerCase())) {
+                        await userCollectionRef.update({
+                            kanjiCurrentStreak: 0
+                        }, { merge: true });
+                        await answerHandler(userId, userCollectionRef, interaction, 'kanji');
+                    } else {
+                        await interaction.reply('Try again!');
+                    }
+                } else {
+                    await interaction.reply('This channel is not set up for the quiz.');
+                }
             } else {
-                await interaction.reply(`Try again!`);
+                console.log(`No document found in server ID`);
+                await interaction.reply('Server data not found.');
             }
-        }else if (channelId === '1338045397972553759') {
-            if (answer.toLowerCase() === getAnswerkatakana().toLowerCase()) {
-                await interaction.reply(`${interaction.user.username} has answered correctly!!! ${timeCheck()}`);
-            } else {
-                await interaction.reply(`Try again!`);
-            }
-        }else if (channelId === '1338056201740619857') {
-            if (getAnswerKanji().meanings.some(meaning => answer.toLowerCase() === meaning.toLowerCase())) {
-                await interaction.reply(`${interaction.user.username} has answered correctly!!! ${timeCheck()}`);
-            } else {
-                await interaction.reply(`Try again!`);
+        } catch (error) {
+            console.error('Error fetching data from Firestore:', error);
+            await interaction.reply('There was an error processing your answer.');
+        }
+    }else if (interaction.commandName === 'serversetup'){
+        console.log("server setup is starting");
+        const serverId = interaction.guildId;
+        const serverRef = db.collection('servers').doc(serverId);
+        const serverDoc = await serverRef.get();
+    
+        if (serverDoc.exists) { 
+            await interaction.channel.send('This server is already registered. Do you want to reassign the channels? (yes/no)');
+            const shouldReassign = await askYesNo(interaction);
+            if (!shouldReassign) {
+                await interaction.channel.send('Setup cancelled.');
+                return;
             }
         }
+
+        if (!interaction.channel) {
+            console.log('No valid channel to send messages.');
+            return; 
+        }   
         
+        await interaction.reply(`${serverId} is the server id`);
+        await interaction.channel.send('tell me what channel is for manga leaderboard of the server.')
+        const mangaLeaderboardChannelId = await askAndWaitForChannel(interaction);
+        await interaction.channel.send('tell me what channel is for user leaderboard of the server.')
+        const userLeaderboardChannelId = await askAndWaitForChannel(interaction);
+        await interaction.channel.send('tell me what channel is for asking hiragana letters.')
+        const askHiraganaChannel = await askAndWaitForChannel(interaction);
+        await interaction.channel.send('tell me what channel is for asking katakana letters.')
+        const askKatakanaChannel = await askAndWaitForChannel(interaction);
+        await interaction.channel.send('tell me what channel is for asking kanji letters.')
+        const askKanjiChannel = await askAndWaitForChannel(interaction);
+
+        await serverRef.set({
+            serverId: serverId,
+            mangaLeaderboardChannelId: mangaLeaderboardChannelId,
+            userLeaderboardChannelId: userLeaderboardChannelId,
+            askHiraganaChannel: askHiraganaChannel,
+            askKatakanaChannel: askKatakanaChannel,
+            askKanjiChannel: askKanjiChannel,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            hiraganaAnswer: null,
+            katakanaAnswer: null,
+            kanjiAnswer: []
+        });
+
+        await interaction.channel.send('Server SetUp is complete, enjoy.')
+
     }
     
 
   
+});
+
+//when bot joins a server
+client.on('guildCreate', async (guild) => {
+    try {
+      const members = await guild.members.fetch(); 
+      const serverRef = db.collection('servers').doc(guild.id);
+      members.forEach(member => {
+        const userRef = serverRef.collection('users').doc(member.id);
+        userRef.set({
+            username: member.user.username,
+            discriminator: member.user.discriminator,
+            joinDate: member.joinedAt,
+            hiraganaCurrentStreak: 0,
+            katakanaCurrentStreak: 0,
+            kanjiCurrentStreak: 0,
+            hiraganaLongestStreak: 0,
+            katakanaLongestStreak: 0,
+            kanjiLongestStreak: 0,
+            hiraganaPoints: 0,
+            katakanaPoints: 0,
+            kanjiPoints: 0,
+            hiraganaAnswered: false,
+            katakanaAnswered: false,
+            kanjiAnswered: false 
+        });
+        console.log(`Stored user ${member.user.username} in Firestore`);
+      });
+  
+      console.log(`All current users stored in Firestore for server: ${guild.name}`);
+    } catch (error) {
+      console.error('Error storing current users in Firestore:', error);
+    }
+  }); 
+  
+//when a user joins the server
+client.on('guildMemberAdd', async (member) => {
+    try {
+        const userId = member.id;
+        const discriminator = member.user.discriminator;
+        const userRef = db.collection('servers').doc(member.guild.id).collection('users').doc(userId);
+        
+        const userDoc = await userRef.get();
+        if (userDoc.exists) {
+            console.log(`User profile for ${member.user.username}#${discriminator} already exists.`);
+        } else {
+            console.log(`Creating profile for ${member.user.username}#${discriminator}.`);
+            await userRef.set({
+                username: member.user.username,
+                discriminator: discriminator,
+                id: userId, 
+                joinedAt: member.joinedAt,
+            });
+        }
+    } catch (error) {
+      console.error('Error adding new member to Firestore:', error);
+    }
+});
+
+//when a user leaves
+client.on('guildMemberRemove', async (member) => {
+    try {
+        const userId = member.id;
+        const userRef = db.collection('servers').doc(member.guild.id).collection('users').doc(userId);
+        console.log(`User profile for ${member.user.username}#${member.user.discriminator} is retained even after they leave.`);
+    } catch (error) {
+        console.error('Error handling member leave:', error);
+    }
 });
 
 client.login(process.env.DISCORD_TOKEN).catch((error) => {
